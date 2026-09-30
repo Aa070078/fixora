@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  TECHNICIAN
+  CUSTOMER
+}
+
+enum RepairStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  ASSIGNED
+  ON_THE_WAY
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+enum IssueCategory {
+  SCREEN
+  BATTERY
+  CHARGING
+  CAMERA
+  SPEAKER
+  MICROPHONE
+  BACK_GLASS
+  SOFTWARE
+  WATER_DAMAGE
+  BUTTONS
+  OTHER
+}
+
+enum MediaKind {
+  IMAGE
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+  CARD
+  PAYMENT_LINK
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  phone        String?
+  role         Role     @default(TECHNICIAN)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignments     RepairRequest[]     @relation("AssignedTechnician")
+  media           RepairMedia[]
+  statusChanges   RepairStatusHistory[]
+  adminNotes      AdminNote[]
+}
+
+model DeviceBrand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  models    DeviceModel[]
+  repairs   RepairRequest[]
+}
+
+model DeviceModel {
+  id        String   @id @default(cuid())
+  brandId   String
+  brand     DeviceBrand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  name      String
+  slug      String
+  createdAt DateTime @default(now())
+  repairs   RepairRequest[]
+
+  @@unique([brandId, slug])
+  @@index([brandId])
+}
+
+model RepairRequest {
+  id               String       @id @default(cuid())
+  refNo            String       @unique
+  trackingToken    String       @unique
+  status           RepairStatus @default(SUBMITTED)
+
+  deviceBrandId    String?
+  deviceModelId    String?
+  deviceDescription String
+  deviceBrand      DeviceBrand? @relation(fields: [deviceBrandId], references: [id], onDelete: SetNull)
+  deviceModel      DeviceModel? @relation(fields: [deviceModelId], references: [id], onDelete: SetNull)
+
+  issueCategory    IssueCategory?
+  issueDescription String
+
+  customerName     String
+  customerPhone    String
+  customerEmail    String?
+
+  addressLine1     String
+  addressLine2     String?
+  city             String
+  region           String?
+  postalCode       String?
+  lat              Float?
+  lng              Float?
+  locationLabel    String?
+
+  preferredDate    String?
+  preferredTimeSlot String?
+
+  scheduledAt      DateTime?
+  estimatedPrice   Decimal?     @db.Decimal(10, 2)
+  finalPrice       Decimal?     @db.Decimal(10, 2)
+
+  assignedTechnicianId String?
+  assignedTechnician   User?    @relation("AssignedTechnician", fields: [assignedTechnicianId], references: [id])
+  technicianName       String?
+
+  completedAt      DateTime?
+  cancellationReason String?
+
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  media         RepairMedia[]
+  notes         AdminNote[]
+  statusHistory RepairStatusHistory[]
+
+  @@index([status])
+  @@index([assignedTechnicianId])
+  @@index([createdAt])
+  @@index([refNo])
+}
+
+model RepairMedia {
+  id            String    @id @default(cuid())
+  repairRequestId String
+  repairRequest RepairRequest @relation(fields: [repairRequestId], references: [id], onDelete: Cascade)
+  url           String
+  kind          MediaKind @default(IMAGE)
+  caption       String?
+  uploadedAt    DateTime  @default(now())
+  uploadedById  String?
+  uploadedBy    User?     @relation(fields: [uploadedById], references: [id])
+
+  @@index([repairRequestId])
+}
+
+model RepairStatusHistory {
+  id              String         @id @default(cuid())
+  repairRequestId String
+  repairRequest   RepairRequest  @relation(fields: [repairRequestId], references: [id], onDelete: Cascade)
+  toStatus        RepairStatus
+  fromStatus      RepairStatus?
+  note            String?
+  createdById     String?
+  createdBy       User?          @relation(fields: [createdById], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@index([repairRequestId])
+  @@index([createdAt])
+}
+
+model AdminNote {
+  id              String         @id @default(cuid())
+  repairRequestId String
+  repairRequest   RepairRequest  @relation(fields: [repairRequestId], references: [id], onDelete: Cascade)
+  authorId        String?
+  author          User?          @relation(fields: [authorId], references: [id])
+  body            String
+  pinned          Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+
+  @@index([repairRequestId])
+}
+
+model ProductCategory {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  imageUrl    String?
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  products    Product[]
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  categoryId     String?
+  category       ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  description    String   @default("")
+  price          Decimal  @db.Decimal(10, 2)
+  compareAtPrice Decimal? @db.Decimal(10, 2)
+  imageUrls      String[] @default([])
+  stock          Int      @default(0)
+  active         Boolean  @default(true)
+  featured       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  orderItems     OrderItem[]
+
+  @@index([categoryId])
+  @@index([slug])
+  @@index([active])
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  refNo         String      @unique
+  status        OrderStatus @default(PENDING)
+  paymentMethod PaymentMethod @default(CASH_ON_DELIVERY)
+
+  customerName  String
+  customerPhone String
+  customerEmail String?
+
+  addressLine1  String
+  addressLine2  String?
+  city          String
+  region        String?
+  postalCode    String?
+
+  note          String?
+  subtotal      Decimal     @db.Decimal(10, 2)
+  deliveryFee   Decimal     @default(0) @db.Decimal(10, 2)
+  total         Decimal     @db.Decimal(10, 2)
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  items         OrderItem[]
+
+  @@index([refNo])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id         String  @id @default(cuid())
+  orderId    String
+  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId  String?
+  product    Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName String
+  quantity   Int
+  unitPrice  Decimal @db.Decimal(10, 2)
+
+  @@index([orderId])
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  channel        String   @default("SMS")
+  recipient      String
+  subject        String?
+  body           String
+  refType        String?
+  refKey         String?
+  status         String   @default("QUEUED")
+  providerError  String?
+  sentAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([refKey])
+}
